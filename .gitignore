@@ -1,0 +1,18 @@
+# OS metadata
+.DS_Store
+Thumbs.db
+
+# Python virtual environments
+venv/
+.venv/
+env/
+__pycache__/
+
+# Sensitive environment variables
+.env
+
+# Data and Cache
+00_INGEST/
+test_nas_data/
+.pytest_cache/
+.antigravity/

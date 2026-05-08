@@ -1,0 +1,21 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: ingest-service
+    url: http://ingest-api:8000
+    routes:
+      - name: ingest-route
+        paths:
+          - /ingest
+        strip_path: true
+    plugins:
+      - name: key-auth
+        config:
+          key_names: ["x-api-key"]
+          hide_credentials: false
+
+consumers:
+  - username: homelab_device
+    keyauth_credentials:
+      - key: super_secret_homelab_key

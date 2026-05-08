@@ -1,0 +1,14 @@
+pydantic
+loguru
+watchdog
+fastapi
+uvicorn
+python-multipart
+google-generativeai
+pillow
+prometheus-client
+pydantic-settings
+python-dotenv
+pytest
+httpx
+schedule

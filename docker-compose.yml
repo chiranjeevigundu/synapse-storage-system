@@ -1,0 +1,58 @@
+services:
+  curator:
+    build: .
+    container_name: synapse_curator
+    restart: unless-stopped
+    volumes:
+      - /mnt/nas_data:/mnt/nas_data
+    env_file:
+      - .env
+    ports:
+      - "8001:8001"
+
+  ingest-api:
+    build: .
+    container_name: synapse_ingest_api
+    restart: unless-stopped
+    volumes:
+      - /mnt/nas_data:/mnt/nas_data
+    env_file:
+      - .env
+    command: ["uvicorn", "src.ingest_api:app", "--host", "0.0.0.0", "--port", "8000"]
+    ports:
+      - "8000:8000"
+
+  gateway:
+    image: kong:3.11
+    container_name: synapse_gateway
+    restart: unless-stopped
+    environment:
+      - KONG_DATABASE=off
+      - KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml
+      - KONG_PROXY_ACCESS_LOG=/dev/stdout
+      - KONG_ADMIN_ACCESS_LOG=/dev/stdout
+      - KONG_PROXY_ERROR_LOG=/dev/stderr
+      - KONG_ADMIN_ERROR_LOG=/dev/stderr
+    volumes:
+      - ./config/kong.yml:/kong/declarative/kong.yml
+    ports:
+      - "80:8000"
+      - "443:8443"
+
+  prometheus:
+    image: prom/prometheus
+    container_name: synapse_prometheus
+    restart: unless-stopped
+    volumes:
+      - ./config/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana-oss
+    container_name: synapse_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin

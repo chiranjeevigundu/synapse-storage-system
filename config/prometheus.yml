@@ -1,0 +1,11 @@
+global:
+  scrape_interval: 15s
+
+scrape_configs:
+  - job_name: 'universe_curator'
+    static_configs:
+      - targets: ['curator:8001']
+  
+  - job_name: 'universe_ingest_api'
+    static_configs:
+      - targets: ['ingest-api:8000']
