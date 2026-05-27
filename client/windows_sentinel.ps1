@@ -18,7 +18,8 @@ Write-Host "Monitoring: $BaseFolder"
 Write-Host "Endpoint: $EndpointUri"
 
 while ($true) {
-    $files = Get-ChildItem -Path $BaseFolder -File
+    # Recursively find all files, excluding files inside the Sent folder
+    $files = Get-ChildItem -Path $BaseFolder -Recurse -File | Where-Object { $_.FullName -notlike "$SentFolder*" }
     
     foreach ($file in $files) {
         Write-Host "Uploading: $($file.Name)..."
@@ -56,8 +57,12 @@ while ($true) {
                 }
             }
 
-            # Cleanup
-            $destPath = Join-Path $SentFolder $file.Name
+            # Determine destination path in Sent folder preserving structure
+            $relativeDir = $file.DirectoryName.Substring($BaseFolder.Length)
+            $destDir = "$SentFolder$relativeDir"
+            if (!(Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
+            $destPath = Join-Path $destDir $file.Name
+            
             Move-Item -Path $file.FullName -Destination $destPath -Force
             Write-Host "Successfully moved to Sent archive."
             
@@ -65,5 +70,20 @@ while ($true) {
             Write-Error "Failed to process $($file.Name): $_"
         }
     }
+    
+    # Clean up empty subdirectories in BaseFolder (excluding Sent)
+    try {
+        Get-ChildItem -Path $BaseFolder -Recurse -Directory | 
+            Where-Object { $_.FullName -notlike "$SentFolder*" } | 
+            Sort-Object -Property FullName -Descending | 
+            ForEach-Object {
+                if ((Get-ChildItem -Path $_.FullName).Count -eq 0) {
+                    Remove-Item -Path $_.FullName -Force | Out-Null
+                }
+            }
+    } catch {
+        # Silent ignore folder deletion errors
+    }
+    
     Start-Sleep -Seconds 2
 }
