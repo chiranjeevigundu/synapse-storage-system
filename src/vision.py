@@ -58,7 +58,7 @@ class VisionClassifier:
     def ensure_ollama_model(self):
         """Verify model presence in Ollama; pull it if missing."""
         import httpx
-        retries = 5
+        retries = 15
         connected = False
         for i in range(retries):
             try:
@@ -68,7 +68,7 @@ class VisionClassifier:
                     break
             except Exception as e:
                 logger.warning(f"Waiting for Ollama service connection... (attempt {i+1}/{retries}): {e}")
-                time.sleep(2)
+                time.sleep(3)
 
         if not connected:
             logger.error("Could not connect to Ollama. Curation fallback will be used.")
