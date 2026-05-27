@@ -22,6 +22,21 @@ while ($true) {
     $files = Get-ChildItem -Path $BaseFolder -Recurse -File | Where-Object { $_.FullName -notlike "$SentFolder*" }
     
     foreach ($file in $files) {
+        if ($file.Length -gt 104857600) {
+            Write-Warning "File $($file.Name) is too large ($([Math]::Round($file.Length / 1MB, 2)) MB). Max upload limit is 100 MB. Skipping API upload and archiving locally."
+            try {
+                $relativeDir = $file.DirectoryName.Substring($BaseFolder.Length)
+                $destDir = "$SentFolder$relativeDir"
+                if (!(Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
+                $destPath = Join-Path $destDir $file.Name
+                Move-Item -Path $file.FullName -Destination $destPath -Force
+                Write-Host "Successfully archived large file locally."
+            } catch {
+                Write-Host "Failed to archive large file $($file.Name): $_" -ForegroundColor Red
+            }
+            continue
+        }
+
         Write-Host "Uploading: $($file.Name)..."
         
         try {
@@ -67,7 +82,7 @@ while ($true) {
             Write-Host "Successfully moved to Sent archive."
             
         } catch {
-            Write-Error "Failed to process $($file.Name): $_"
+            Write-Host "Failed to process $($file.Name): $_" -ForegroundColor Red
         }
     }
     
