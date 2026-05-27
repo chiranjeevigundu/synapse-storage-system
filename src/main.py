@@ -162,21 +162,25 @@ class IngestHandler(FileSystemEventHandler):
             logger.info(f"Extracted Source Device: {source_device}")
             
             category = "03_PERSONAL/Archives"  # Default fallback category
+            clean_name = None
             
-            # AI Vision Tagging
-            valid_extensions = {".jpg", ".jpeg", ".png", ".heic"}
+            # AI Document/Image Tagging and Renaming
+            valid_extensions = {".jpg", ".jpeg", ".png", ".heic", ".pdf"}
             if file_path.suffix.lower() in valid_extensions:
-                logger.info(f"Image detected ({file_path.suffix}). Triggering VisionClassifier for AI tagging...")
-                category = self.vision_classifier.classify_image(str(file_path))
+                logger.info(f"Document/Image detected ({file_path.suffix}). Triggering Classifier...")
+                res = self.vision_classifier.classify_document(str(file_path))
+                category = res.get("category", "03_PERSONAL/Archives")
+                clean_name = res.get("clean_filename")
                 AI_CATEGORIZATION_COUNTER.inc()
-                logger.success(f"AI assigned category: {category}")
+                logger.success(f"AI assigned category: {category}, clean filename: {clean_name}")
             
             metadata = FileMetadata(
                 original_path=file_path,
                 file_hash=file_hash,
                 source_device=source_device,
                 creation_date=creation_date,
-                category=category
+                category=category,
+                clean_name=clean_name
             )
             
             # 4. Generate final NAS destination
@@ -195,7 +199,7 @@ class IngestHandler(FileSystemEventHandler):
             # Update ledger with robust metadata for the HITL review tool
             self.ledger.update_entry(file_hash, {
                 "file_hash": file_hash,
-                "original_name": file_path.name,
+                "original_name": clean_name or file_path.name,
                 "category": category,
                 "target_path": str(metadata.target_path),
                 "timestamp": datetime.now().isoformat()

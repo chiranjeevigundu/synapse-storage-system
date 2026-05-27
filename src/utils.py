@@ -16,14 +16,22 @@ def calculate_sha256(file_path: Path | str, chunk_size: int = 8192 * 1024) -> st
 def generate_universe_path(metadata) -> Path:
     """
     Resolves the final destination on the NAS using the 
-    YYYY-MM-DD_SourceDevice_OriginalName standard.
+    YYYY-MM-DD_SourceDevice_CleanName standard.
     """
     original_path = Path(metadata.original_path)
     date_str = metadata.creation_date.strftime("%Y-%m-%d")
     
     # Replace spaces with underscores
     safe_device = metadata.source_device.replace(" ", "_")
-    safe_name = original_path.name.replace(" ", "_")
+    
+    # Use clean_name if available, otherwise original_path.name
+    display_name = getattr(metadata, "clean_name", None) or original_path.name
+    
+    # Strip leading device name if it is prepended (e.g. CHIRU_receipt.pdf -> receipt.pdf)
+    if display_name.startswith(f"{safe_device}_"):
+        display_name = display_name[len(safe_device)+1:]
+        
+    safe_name = display_name.replace(" ", "_")
     
     new_filename = f"{date_str}_{safe_device}_{safe_name}"
     

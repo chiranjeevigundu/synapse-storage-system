@@ -9,4 +9,5 @@ class FileMetadata(BaseModel):
     source_device: str
     creation_date: datetime
     category: str
+    clean_name: Optional[str] = None
     target_path: Optional[Path] = None
