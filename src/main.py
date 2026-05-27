@@ -88,13 +88,29 @@ def wait_for_file_stability(file_path: Path, interval: float = 0.5, timeout: flo
     while time.time() - start_time < timeout:
         try:
             current_size = file_path.stat().st_size
-            if current_size == last_size and current_size > 0:
+            if current_size == last_size and current_size >= 0:
                 return True
             last_size = current_size
         except Exception:
             pass
         time.sleep(interval)
     return False
+
+PROCESSING_FILES = set()
+PROCESSING_LOCK = threading.Lock()
+
+def process_file_safe(file_path: Path, handler):
+    abs_path = str(file_path.absolute())
+    with PROCESSING_LOCK:
+        if abs_path in PROCESSING_FILES:
+            return
+        PROCESSING_FILES.add(abs_path)
+    
+    try:
+        handler._process_file(file_path)
+    finally:
+        with PROCESSING_LOCK:
+            PROCESSING_FILES.discard(abs_path)
 
 class IngestHandler(FileSystemEventHandler):
     def __init__(self, ledger: Ledger):
@@ -104,18 +120,19 @@ class IngestHandler(FileSystemEventHandler):
 
     def on_created(self, event):
         if not event.is_directory:
-            self._process_file(Path(event.src_path))
+            process_file_safe(Path(event.src_path), self)
 
     def on_moved(self, event):
         if not event.is_directory:
-            self._process_file(Path(event.dest_path))
+            process_file_safe(Path(event.dest_path), self)
 
     def _process_file(self, file_path: Path):
         logger.info(f"Event detected! Processing: {file_path}")
         
         # Ensure the file is fully written/stable before hashing
         if not wait_for_file_stability(file_path):
-            logger.warning(f"File {file_path} size is unstable or not fully written. Processing anyway.")
+            logger.warning(f"File {file_path} size is unstable or not fully written. Skipping for next check.")
+            return
 
         try:
             # 1. Calculate file hash
@@ -195,6 +212,17 @@ def run_scheduler():
         schedule.run_pending()
         time.sleep(60)
 
+def run_sweep(event_handler, interval: float = 10.0):
+    while True:
+        try:
+            if BASE_INGEST_PATH.exists():
+                for file_path in BASE_INGEST_PATH.iterdir():
+                    if file_path.is_file() and not file_path.name.startswith("."):
+                        process_file_safe(file_path, event_handler)
+        except Exception as e:
+            logger.error(f"Error during directory sweep: {e}")
+        time.sleep(interval)
+
 def main():
     mode_str = "Dry Run" if settings.DRY_RUN else "Live Curation Mode"
     logger.info(f"Starting Universe Curator - Watchdog Background Service ({mode_str})")
@@ -224,6 +252,11 @@ def main():
     
     observer.start()
     logger.info(f"Monitoring directory: {BASE_INGEST_PATH}")
+    
+    # Start periodic directory sweep
+    sweep_thread = threading.Thread(target=run_sweep, args=(event_handler,), daemon=True)
+    sweep_thread.start()
+    logger.info("Periodic directory sweep thread started (interval: 10s).")
     
     # Initialize disk usage gauge
     update_disk_usage()
