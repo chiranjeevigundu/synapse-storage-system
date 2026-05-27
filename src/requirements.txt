@@ -12,3 +12,4 @@ python-dotenv
 pytest
 httpx
 schedule
+pypdf

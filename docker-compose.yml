@@ -56,3 +56,12 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_PASSWORD=admin
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: synapse_ollama
+    restart: unless-stopped
+    volumes:
+      - /mnt/nas_data/ollama:/root/.ollama
+    ports:
+      - "11434:11434"

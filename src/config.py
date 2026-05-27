@@ -9,6 +9,9 @@ class Settings(BaseSettings):
     LOG_LEVEL: str = "INFO"
     LEDGER_PATH: str = ""
     DRY_RUN: bool = True
+    USE_LOCAL_LLM: bool = False
+    OLLAMA_URL: str = "http://ollama:11434"
+    OLLAMA_MODEL: str = "gemma2:2b"
 
     @property
     def ledger_file_path(self) -> Path:

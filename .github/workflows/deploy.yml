@@ -29,6 +29,9 @@ jobs:
           echo "KONG_GATEWAY_URL=http://127.0.0.1:8000" >> .env
           echo "LOG_LEVEL=INFO" >> .env
           echo "DRY_RUN=False" >> .env
+          echo "USE_LOCAL_LLM=True" >> .env
+          echo "OLLAMA_URL=http://ollama:11434" >> .env
+          echo "OLLAMA_MODEL=gemma2:2b" >> .env
           
           # Execute setup script and fix NAS mount permissions
           chmod +x deploy/setup_env.sh
