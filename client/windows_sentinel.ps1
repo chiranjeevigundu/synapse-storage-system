@@ -9,8 +9,20 @@ $SourceDevice = $env:COMPUTERNAME
 $BaseFolder = "C:\NAS_Outbox"
 $SentFolder = "$BaseFolder\Sent"
 
-if (!(Test-Path $BaseFolder)) { New-Item -ItemType Directory -Force -Path $BaseFolder | Out-Null }
-if (!(Test-Path $SentFolder)) { New-Item -ItemType Directory -Force -Path $SentFolder | Out-Null }
+if (!(Test-Path -LiteralPath $BaseFolder)) { New-Item -ItemType Directory -Force -Path $BaseFolder | Out-Null }
+if (!(Test-Path -LiteralPath $SentFolder)) { New-Item -ItemType Directory -Force -Path $SentFolder | Out-Null }
+
+function Move-LiteralFile {
+    param (
+        [string]$SourcePath,
+        [string]$DestPath
+    )
+    if (Test-Path -LiteralPath $DestPath) {
+        Remove-Item -LiteralPath $DestPath -Force | Out-Null
+    }
+    [System.IO.File]::Move($SourcePath, $DestPath)
+}
+
 
 Write-Host "Windows Sentinel Agent Initialized."
 Write-Host "Device: $SourceDevice"
@@ -27,9 +39,9 @@ while ($true) {
             try {
                 $relativeDir = $file.DirectoryName.Substring($BaseFolder.Length)
                 $destDir = "$SentFolder$relativeDir"
-                if (!(Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
+                if (!(Test-Path -LiteralPath $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
                 $destPath = Join-Path $destDir $file.Name
-                Move-Item -Path $file.FullName -Destination $destPath -Force
+                Move-LiteralFile -SourcePath $file.FullName -DestPath $destPath
                 Write-Host "Successfully archived large file locally."
             } catch {
                 Write-Host "Failed to archive large file $($file.Name): $_" -ForegroundColor Red
@@ -48,7 +60,7 @@ while ($true) {
                 $form = @{
                     source_device = $SourceDevice
                     category      = "00_INGEST/Uncategorized"
-                    file          = Get-Item -Path $file.FullName
+                    file          = Get-Item -LiteralPath $file.FullName
                 }
                 $response = Invoke-RestMethod -Uri $EndpointUri -Method Post -Headers $headers -Form $form
                 Write-Host "Response received. Success."
@@ -75,10 +87,10 @@ while ($true) {
             # Determine destination path in Sent folder preserving structure
             $relativeDir = $file.DirectoryName.Substring($BaseFolder.Length)
             $destDir = "$SentFolder$relativeDir"
-            if (!(Test-Path $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
+            if (!(Test-Path -LiteralPath $destDir)) { New-Item -ItemType Directory -Force -Path $destDir | Out-Null }
             $destPath = Join-Path $destDir $file.Name
             
-            Move-Item -Path $file.FullName -Destination $destPath -Force
+            Move-LiteralFile -SourcePath $file.FullName -DestPath $destPath
             Write-Host "Successfully moved to Sent archive."
             
         } catch {
@@ -92,8 +104,8 @@ while ($true) {
             Where-Object { $_.FullName -notlike "$SentFolder*" } | 
             Sort-Object -Property FullName -Descending | 
             ForEach-Object {
-                if ((Get-ChildItem -Path $_.FullName).Count -eq 0) {
-                    Remove-Item -Path $_.FullName -Force | Out-Null
+                if ((Get-ChildItem -LiteralPath $_.FullName).Count -eq 0) {
+                    Remove-Item -LiteralPath $_.FullName -Force | Out-Null
                 }
             }
     } catch {
