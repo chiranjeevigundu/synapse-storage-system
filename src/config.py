@@ -11,7 +11,7 @@ class Settings(BaseSettings):
     DRY_RUN: bool = True
     USE_LOCAL_LLM: bool = False
     OLLAMA_URL: str = "http://ollama:11434"
-    OLLAMA_MODEL: str = "gemma2:2b"
+    OLLAMA_MODEL: str = "gemma4:e2b"
 
     @property
     def ledger_file_path(self) -> Path:

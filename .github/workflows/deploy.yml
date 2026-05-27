@@ -31,7 +31,7 @@ jobs:
           echo "DRY_RUN=False" >> .env
           echo "USE_LOCAL_LLM=True" >> .env
           echo "OLLAMA_URL=http://ollama:11434" >> .env
-          echo "OLLAMA_MODEL=gemma2:2b" >> .env
+          echo "OLLAMA_MODEL=gemma4:e2b" >> .env
           
           # Execute setup script and fix NAS mount permissions
           chmod +x deploy/setup_env.sh

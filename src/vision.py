@@ -125,11 +125,55 @@ class VisionClassifier:
         return text.strip()
 
     def classify_local_llm(self, file_path: str) -> dict:
-        """Classify PDF using local Ollama model."""
+        """Classify documents using local Ollama model (Gemma 4 multimodal-capable)."""
         import httpx
+        import base64
         ext = os.path.splitext(file_path)[1].lower()
+        image_exts = {".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp"}
+
+        prompt = f"""
+        {self.schema_prompt}
+
+        Response must be JSON format only.
+        """
+
+        # --- Image path: pass image directly to the multimodal model ---
+        if ext in image_exts:
+            logger.info(f"Sending image to multimodal Ollama model: {file_path}")
+            try:
+                with open(file_path, "rb") as f:
+                    image_b64 = base64.b64encode(f.read()).decode("utf-8")
+                resp = httpx.post(
+                    f"{self.ollama_url}/api/generate",
+                    json={
+                        "model": self.ollama_model,
+                        "prompt": prompt,
+                        "images": [image_b64],
+                        "format": "json",
+                        "stream": False
+                    },
+                    timeout=60.0
+                )
+                if resp.status_code == 200:
+                    res_json = resp.json()
+                    response_text = res_json.get("response", "")
+                    cleaned = self.clean_json_text(response_text)
+                    res = json.loads(cleaned)
+                    category = res.get("category", "03_PERSONAL/Archives")
+                    clean_filename = res.get("clean_filename", os.path.basename(file_path))
+                    if "/" not in category or "_" not in category:
+                        category = "03_PERSONAL/Archives"
+                    logger.success(f"Gemma 4 image classification: {category} -> {clean_filename}")
+                    return {"category": category, "clean_filename": clean_filename}
+                else:
+                    logger.error(f"Ollama image API returned status {resp.status_code}: {resp.text}")
+            except Exception as e:
+                logger.error(f"Error during multimodal image classification: {e}")
+            return self.fallback_heuristic(file_path)
+
+        # --- PDF path: extract text and send to model ---
         if ext != ".pdf":
-            logger.info(f"Local LLM text-only: Fallback heuristic for non-PDF: {file_path}")
+            logger.info(f"Non-PDF/image file: using fallback heuristic for {file_path}")
             return self.fallback_heuristic(file_path)
 
         text = self.extract_pdf_text(file_path)
@@ -139,7 +183,7 @@ class VisionClassifier:
 
         truncated_text = text[:4000]
         
-        prompt = f"""
+        text_prompt = f"""
         {self.schema_prompt}
 
         Document Content to Analyze:
@@ -155,11 +199,11 @@ class VisionClassifier:
                 f"{self.ollama_url}/api/generate",
                 json={
                     "model": self.ollama_model,
-                    "prompt": prompt,
+                    "prompt": text_prompt,
                     "format": "json",
                     "stream": False
                 },
-                timeout=30.0
+                timeout=60.0
             )
             if resp.status_code == 200:
                 res_json = resp.json()
