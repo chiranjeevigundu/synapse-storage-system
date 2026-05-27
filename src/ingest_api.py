@@ -26,7 +26,7 @@ def verify_api_key(x_api_key: str = Header(None)):
 async def metrics():
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-LEDGER_PATH = Path(__file__).parent / "ledger.json"
+LEDGER_PATH = settings.ledger_file_path
 
 @app.get("/review", dependencies=[Depends(verify_api_key)])
 async def get_review_ledger():

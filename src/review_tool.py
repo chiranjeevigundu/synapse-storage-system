@@ -7,7 +7,7 @@ from pathlib import Path
 from loguru import logger
 from config import settings
 
-LEDGER_PATH = Path(__file__).parent / "ledger.json"
+LEDGER_PATH = settings.ledger_file_path
 
 def load_ledger():
     if not LEDGER_PATH.exists():
@@ -17,8 +17,19 @@ def load_ledger():
         return data.get("entries", {})
 
 def save_ledger(entries):
-    with open(LEDGER_PATH, "w") as f:
-        json.dump({"entries": entries}, f, indent=4)
+    temp_path = LEDGER_PATH.with_suffix(".tmp")
+    try:
+        with open(temp_path, "w") as f:
+            json.dump({"entries": entries}, f, indent=4)
+        import os
+        os.replace(str(temp_path), str(LEDGER_PATH))
+    except Exception as e:
+        logger.error(f"Failed to atomically save ledger via review tool: {e}")
+        if temp_path.exists():
+            try:
+                temp_path.unlink()
+            except Exception:
+                pass
 
 def show_recent():
     entries = load_ledger()

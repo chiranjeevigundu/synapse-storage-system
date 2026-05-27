@@ -8,7 +8,7 @@ import schedule
 from pathlib import Path
 from datetime import datetime
 from loguru import logger
-from watchdog.observers import Observer
+from watchdog.observers.polling import PollingObserver as Observer
 from watchdog.events import FileSystemEventHandler
 from prometheus_client import start_http_server, Counter, Gauge
 
@@ -23,7 +23,7 @@ NAS_STORAGE_USAGE = Gauge('nas_storage_usage_percent', 'Current storage usage pe
 
 BASE_INGEST_PATH = Path(settings.NAS_BASE_PATH) / "00_INGEST"
 
-LEDGER_PATH = Path(__file__).parent / "ledger.json"
+LEDGER_PATH = settings.ledger_file_path
 
 def update_disk_usage():
     try:
@@ -54,8 +54,18 @@ class Ledger:
                 logger.warning("Ledger is corrupted or empty. Starting fresh.")
                 
     def save(self):
-        with open(self.path, "w") as f:
-            json.dump({"entries": self.entries}, f, indent=4)
+        temp_path = self.path.with_suffix(".tmp")
+        try:
+            with open(temp_path, "w") as f:
+                json.dump({"entries": self.entries}, f, indent=4)
+            os.replace(str(temp_path), str(self.path))
+        except Exception as e:
+            logger.error(f"Failed to atomically save ledger: {e}")
+            if temp_path.exists():
+                try:
+                    temp_path.unlink()
+                except Exception:
+                    pass
 
     def contains(self, file_hash: str) -> bool:
         return file_hash in self.entries
@@ -68,6 +78,23 @@ class Ledger:
     def update_entry(self, file_hash: str, metadata_dict: dict):
         self.entries[file_hash] = metadata_dict
         self.save()
+
+def wait_for_file_stability(file_path: Path, interval: float = 0.5, timeout: float = 10.0) -> bool:
+    """Waits until a file's size is stable (fully written)."""
+    if not file_path.exists():
+        return False
+    last_size = -1
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            current_size = file_path.stat().st_size
+            if current_size == last_size and current_size > 0:
+                return True
+            last_size = current_size
+        except Exception:
+            pass
+        time.sleep(interval)
+    return False
 
 class IngestHandler(FileSystemEventHandler):
     def __init__(self, ledger: Ledger):
@@ -86,8 +113,9 @@ class IngestHandler(FileSystemEventHandler):
     def _process_file(self, file_path: Path):
         logger.info(f"Event detected! Processing: {file_path}")
         
-        # Adding a tiny delay to ensure file write is complete before hashing
-        time.sleep(0.5)
+        # Ensure the file is fully written/stable before hashing
+        if not wait_for_file_stability(file_path):
+            logger.warning(f"File {file_path} size is unstable or not fully written. Processing anyway.")
 
         try:
             # 1. Calculate file hash
@@ -96,6 +124,12 @@ class IngestHandler(FileSystemEventHandler):
             # 2. Check ledger for duplicates
             if self.ledger.contains(file_hash):
                 logger.error(f"DUPLICATE DETECTED: File {file_path} matches existing hash {file_hash}. Skipping.")
+                if not settings.DRY_RUN:
+                    try:
+                        logger.info(f"Removing duplicate file from ingest zone: {file_path}")
+                        file_path.unlink()
+                    except Exception as e:
+                        logger.error(f"Failed to delete duplicate file {file_path}: {e}")
                 return
                 
             self.ledger.add_hash_only(file_hash)
@@ -132,8 +166,14 @@ class IngestHandler(FileSystemEventHandler):
             target_path = generate_universe_path(metadata)
             metadata.target_path = target_path
             
-            # 5. Log the intent (Dry Run)
-            logger.success(f"DRY RUN: Would move {file_path.name} -> {metadata.target_path}")
+            # 5. Move the file or log dry run intent
+            if settings.DRY_RUN:
+                logger.success(f"DRY RUN: Would move {file_path.name} -> {metadata.target_path}")
+            else:
+                logger.info(f"Moving file from {file_path} to {metadata.target_path}")
+                metadata.target_path.parent.mkdir(parents=True, exist_ok=True)
+                shutil.move(str(file_path), str(metadata.target_path))
+                logger.success(f"Successfully moved {file_path.name} to {metadata.target_path}")
             
             # Update ledger with robust metadata for the HITL review tool
             self.ledger.update_entry(file_hash, {
@@ -156,7 +196,8 @@ def run_scheduler():
         time.sleep(60)
 
 def main():
-    logger.info("Starting Universe Curator - Watchdog Background Service (Dry Run)")
+    mode_str = "Dry Run" if settings.DRY_RUN else "Live Curation Mode"
+    logger.info(f"Starting Universe Curator - Watchdog Background Service ({mode_str})")
     
     # Start Prometheus metrics server
     start_http_server(8001)

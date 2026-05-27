@@ -23,7 +23,7 @@ services:
       - "8000:8000"
 
   gateway:
-    image: kong:3.11
+    image: kong:3.9
     container_name: synapse_gateway
     restart: unless-stopped
     environment:

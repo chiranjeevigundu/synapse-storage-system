@@ -6,7 +6,7 @@ from loguru import logger
 from config import settings
 from utils import calculate_sha256
 
-LEDGER_PATH = Path(__file__).parent / "ledger.json"
+LEDGER_PATH = settings.ledger_file_path
 REPORT_DIR = Path(settings.NAS_BASE_PATH) / "05_SYSTEM" / "Audit_Reports"
 
 class IntegrityAuditor:
@@ -45,6 +45,9 @@ class IntegrityAuditor:
             target_path = Path(target_path_str)
             
             if not target_path.exists():
+                if settings.DRY_RUN:
+                    logger.warning(f"File not curated yet (DRY RUN): {target_path.name}")
+                    continue
                 missing_files.append(str(target_path))
                 logger.critical(f"MISSING FILE: {target_path}")
                 continue

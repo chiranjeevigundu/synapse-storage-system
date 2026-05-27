@@ -1,12 +1,12 @@
 param(
-    [string]$EndpointUri = "http://127.0.0.1:8000/upload", # Defaulted to local for testing. Update to http://[Mac-Mini-IP]:80/ingest/upload in production.
+    [string]$EndpointUri = "http://192.168.12.37/ingest/upload",
     [string]$ApiKey = "super_secret_homelab_key"
 )
 
 $ErrorActionPreference = "Stop"
 
 $SourceDevice = $env:COMPUTERNAME
-$BaseFolder = "$env:USERPROFILE\Documents\NAS_Outbox"
+$BaseFolder = "C:\NAS_Outbox"
 $SentFolder = "$BaseFolder\Sent"
 
 if (!(Test-Path $BaseFolder)) { New-Item -ItemType Directory -Force -Path $BaseFolder | Out-Null }
@@ -48,6 +48,7 @@ while ($true) {
                     "-s", "-w", "\n%{http_code}",
                     $EndpointUri
                 )
+                $output = curl.exe @curlArgs
                 $outStr = $output -join ""
                 Write-Host "Curl Output: $outStr"
                 if ($outStr -notmatch "200$") {

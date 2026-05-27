@@ -1,0 +1,59 @@
+name: Deploy Synapse Storage System
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  deploy:
+    name: Build and Deploy to Mac Mini
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 🔍 Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: 📁 Transfer Files via SFTP
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: "192.168.12.37"
+          username: "linuxuser"
+          password: ${{ secrets.SSH_PASSWORD }} # Setup '55555' in GitHub Repository Secrets
+          source: "."
+          target: "/home/linuxuser/synapse-storage-system"
+          rm: false
+          exclude: |
+            .git
+            .venv
+            venv
+            .pytest_cache
+            __pycache__
+            test_nas_data
+            .antigravity
+            .env
+            .env.example
+
+      - name: 🚀 Remote Setup and Restart Services
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: "192.168.12.37"
+          username: "linuxuser"
+          password: ${{ secrets.SSH_PASSWORD }}
+          script: |
+            cd /home/linuxuser/synapse-storage-system
+            
+            # Write remote .env configuration file
+            echo "API_KEY=super_secret_homelab_key" > .env
+            echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
+            echo "NAS_BASE_PATH=/mnt/nas_data" >> .env
+            echo "KONG_GATEWAY_URL=http://127.0.0.1:8000" >> .env
+            echo "LOG_LEVEL=INFO" >> .env
+            echo "DRY_RUN=False" >> .env
+            
+            # Execute setup script and fix NAS mount permissions
+            chmod +x deploy/setup_env.sh
+            echo "${{ secrets.SSH_PASSWORD }}" | sudo -S bash deploy/setup_env.sh
+            
+            # Rebuild and start containerized stack
+            echo "${{ secrets.SSH_PASSWORD }}" | sudo -S docker compose down
+            echo "${{ secrets.SSH_PASSWORD }}" | sudo -S docker compose up -d --build

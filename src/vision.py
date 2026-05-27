@@ -13,7 +13,7 @@ class VisionClassifier:
             try:
                 import google.generativeai as genai
                 genai.configure(api_key=api_key)
-                self.model = genai.GenerativeModel('gemini-1.5-flash')
+                self.model = genai.GenerativeModel('gemini-flash-latest')
             except ImportError:
                 logger.error("google.generativeai module missing. Defaulting to MOCK mode.")
                 self.mock_mode = True
