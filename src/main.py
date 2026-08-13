@@ -19,6 +19,16 @@ from config import settings
 
 # Metrics
 AI_CATEGORIZATION_COUNTER = Counter('ai_categorization_count', 'Total number of files categorized by AI vision')
+# Files sorted by filename substring matching because the model path failed — an
+# unreachable Ollama, an incomplete pull, an unparseable response. Every one of those
+# is silent from the outside, and until this existed they were counted as AI
+# categorisations: the dashboard read healthy while nothing was being classified.
+# Expect this to be non-zero on any run where the model is unavailable, and note that
+# ai_categorization_count may drop sharply now that it means what its help text says.
+HEURISTIC_CATEGORIZATION_COUNTER = Counter(
+    'heuristic_categorization_count',
+    'Files categorized by filename heuristic because the model was unavailable',
+)
 NAS_STORAGE_USAGE = Gauge('nas_storage_usage_percent', 'Current storage usage percentage of the NAS')
 
 BASE_INGEST_PATH = Path(settings.NAS_BASE_PATH) / "00_INGEST"
@@ -171,8 +181,20 @@ class IngestHandler(FileSystemEventHandler):
                 res = self.vision_classifier.classify_document(str(file_path))
                 category = res.get("category", "03_PERSONAL/Archives")
                 clean_name = res.get("clean_filename")
-                AI_CATEGORIZATION_COUNTER.inc()
-                logger.success(f"AI assigned category: {category}, clean filename: {clean_name}")
+                # Count what actually happened. The unconditional increment here used
+                # to report every filename-substring fallback as an AI categorisation,
+                # so the metric stayed healthy while classification was degraded — the
+                # observability actively hid the failure rather than surfacing it.
+                method = res.get("method", "model")
+                if method == "model":
+                    AI_CATEGORIZATION_COUNTER.inc()
+                    logger.success(f"AI assigned category: {category}, clean filename: {clean_name}")
+                else:
+                    HEURISTIC_CATEGORIZATION_COUNTER.inc()
+                    logger.warning(
+                        f"Model unavailable ({method}); filename heuristic assigned "
+                        f"category: {category}, clean filename: {clean_name}"
+                    )
             
             metadata = FileMetadata(
                 original_path=file_path,

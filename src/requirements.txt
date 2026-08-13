@@ -13,3 +13,7 @@ pytest
 httpx
 schedule
 pypdf
+# Shared LLM plumbing (parse helpers, routing, storage), also used by
+# aadyon-assist. Pinned by commit SHA: tags can move, SHAs cannot.
+llmkit @ https://github.com/chiranjeevigundu/llmkit/archive/785c5a410dca4e04f65bad052a4a61bc44c53905.tar.gz
+
