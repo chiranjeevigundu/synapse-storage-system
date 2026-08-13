@@ -3,7 +3,32 @@ import json
 import time
 from loguru import logger
 from PIL import Image
+from llmkit.parse import ParseError, extract_pdf_text as _extract_pdf_text, parse_json_response
 from config import settings
+
+# Every classification says how it was reached. Without this the caller cannot tell a
+# real model result from the filename-substring fallback, and `main.py` was counting
+# both as AI categorisations — so Prometheus reported healthy AI classification while
+# every file was actually being sorted by whether its name contained "receipt".
+METHOD_MODEL = "model"
+METHOD_HEURISTIC = "heuristic"
+METHOD_MOCK = "mock"
+
+DEFAULT_CATEGORY = "03_PERSONAL/Archives"
+
+
+def _classification(category: str, clean_filename: str, method: str) -> dict:
+    """Build a result, defaulting a category that does not look like a taxonomy path.
+
+    The category check was written out three times with the same two conditions; a
+    model returning prose instead of a path would otherwise become a directory name.
+    """
+    if not category or "/" not in category or "_" not in category:
+        if method == METHOD_MODEL:
+            logger.warning(f"Model returned an unusable category {category!r}; using default")
+        category = DEFAULT_CATEGORY
+    return {"category": category, "clean_filename": clean_filename, "method": method}
+
 
 class VisionClassifier:
     def __init__(self):
@@ -99,30 +124,31 @@ class VisionClassifier:
             logger.error(f"Error checking/pulling Ollama model: {e}")
 
     def extract_pdf_text(self, file_path: str) -> str:
-        """Extract up to first 3 pages of text from PDF using pypdf."""
+        """First three pages of a PDF, or "" if it cannot be read.
+
+        Delegates to llmkit. Callers here treat empty as "fall back to the heuristic",
+        so the raising interface is adapted rather than propagated — but the reason it
+        raises upstream matters: the other copy of this helper returned
+        "[PDF parsing failed: ...]" as the text, which a caller cannot distinguish
+        from a document that says that.
+        """
         try:
-            import pypdf
-            reader = pypdf.PdfReader(file_path)
-            text_parts = []
-            max_pages = min(len(reader.pages), 3)
-            for i in range(max_pages):
-                page_text = reader.pages[i].extract_text()
-                if page_text:
-                    text_parts.append(page_text)
-            return "\n".join(text_parts).strip()
-        except Exception as e:
+            return _extract_pdf_text(file_path, max_pages=3)
+        except ParseError as e:
             logger.error(f"Error extracting PDF text from {file_path}: {e}")
             return ""
 
     def clean_json_text(self, text: str) -> str:
-        text = text.strip()
-        if text.startswith("```json"):
-            text = text[7:]
-        elif text.startswith("```"):
-            text = text[3:]
-        if text.endswith("```"):
-            text = text[:-3]
-        return text.strip()
+        """Kept for backwards compatibility; llmkit.parse does the work now.
+
+        This implementation was the correct one of the two that existed — it stripped
+        leading whitespace before testing for the fence, which the copy in
+        aadyon-assist did not. Centralising it is what stops the two from drifting
+        apart again.
+        """
+        from llmkit.parse import strip_json_fences
+
+        return strip_json_fences(text)
 
     def classify_local_llm(self, file_path: str) -> dict:
         """Classify documents using local Ollama model (Gemma 4 multimodal-capable)."""
@@ -157,14 +183,16 @@ class VisionClassifier:
                 if resp.status_code == 200:
                     res_json = resp.json()
                     response_text = res_json.get("response", "")
-                    cleaned = self.clean_json_text(response_text)
-                    res = json.loads(cleaned)
-                    category = res.get("category", "03_PERSONAL/Archives")
-                    clean_filename = res.get("clean_filename", os.path.basename(file_path))
-                    if "/" not in category or "_" not in category:
-                        category = "03_PERSONAL/Archives"
-                    logger.success(f"Gemma 4 image classification: {category} -> {clean_filename}")
-                    return {"category": category, "clean_filename": clean_filename}
+                    res = parse_json_response(response_text)
+                    result = _classification(
+                        res.get("category", DEFAULT_CATEGORY),
+                        res.get("clean_filename", os.path.basename(file_path)),
+                        METHOD_MODEL,
+                    )
+                    logger.success(
+                        f"Model image classification: {result['category']} -> {result['clean_filename']}"
+                    )
+                    return result
                 else:
                     logger.error(f"Ollama image API returned status {resp.status_code}: {resp.text}")
             except Exception as e:
@@ -207,15 +235,12 @@ class VisionClassifier:
             )
             if resp.status_code == 200:
                 res_json = resp.json()
-                response_text = res_json.get("response", "")
-                cleaned = self.clean_json_text(response_text)
-                res = json.loads(cleaned)
-                category = res.get("category", "03_PERSONAL/Archives")
-                clean_filename = res.get("clean_filename", os.path.basename(file_path))
-                
-                if "/" not in category or "_" not in category:
-                    category = "03_PERSONAL/Archives"
-                return {"category": category, "clean_filename": clean_filename}
+                res = parse_json_response(res_json.get("response", ""))
+                return _classification(
+                    res.get("category", DEFAULT_CATEGORY),
+                    res.get("clean_filename", os.path.basename(file_path)),
+                    METHOD_MODEL,
+                )
             else:
                 logger.error(f"Ollama API returned status {resp.status_code}: {resp.text}")
         except Exception as e:
@@ -223,15 +248,24 @@ class VisionClassifier:
 
         return self.fallback_heuristic(file_path)
 
-    def fallback_heuristic(self, file_path: str) -> dict:
+    def fallback_heuristic(self, file_path: str, method: str = METHOD_HEURISTIC) -> dict:
+        """Filename substring matching. Not AI, and the result says so.
+
+        Reached whenever the model path fails — an unreachable Ollama, a pull that did
+        not complete, a response that will not parse. Those are all silent from the
+        outside, which is exactly why the returned `method` matters: it is the only
+        thing that distinguishes a working classifier from one that has quietly
+        degraded to matching filenames.
+        """
         name = os.path.basename(file_path).lower()
+        base = os.path.basename(file_path)
         if "receipt" in name or "invoice" in name:
-            return {"category": "04_FINANCIAL/Invoices_Receipts", "clean_filename": os.path.basename(file_path)}
+            return _classification("04_FINANCIAL/Invoices_Receipts", base, method)
         elif "w2" in name or "tax" in name or "sodexo" in name:
-            return {"category": "04_FINANCIAL/Tax_Records", "clean_filename": os.path.basename(file_path)}
+            return _classification("04_FINANCIAL/Tax_Records", base, method)
         elif "offer_letter" in name or "contract" in name or "employment" in name:
-            return {"category": "01_PROFESSIONAL/Documentation", "clean_filename": os.path.basename(file_path)}
-        return {"category": "03_PERSONAL/Archives", "clean_filename": os.path.basename(file_path)}
+            return _classification("01_PROFESSIONAL/Documentation", base, method)
+        return _classification(DEFAULT_CATEGORY, base, method)
 
     def classify_document(self, file_path: str) -> dict:
         """Classifies any document (PDF or Image) and generates a clean filename."""
@@ -239,7 +273,7 @@ class VisionClassifier:
             return self.classify_local_llm(file_path)
 
         if self.mock_mode:
-            return self.fallback_heuristic(file_path)
+            return self.fallback_heuristic(file_path, method=METHOD_MOCK)
             
         try:
             import google.generativeai as genai
@@ -257,16 +291,12 @@ class VisionClassifier:
             except Exception as e:
                 logger.error(f"Failed to delete uploaded temp file: {e}")
                 
-            json_text = self.clean_json_text(response.text)
-            res = json.loads(json_text)
-            category = res.get("category", "03_PERSONAL/Archives")
-            clean_filename = res.get("clean_filename", os.path.basename(file_path))
-            
-            if "/" not in category or "_" not in category:
-                logger.warning(f"Unexpected category path from Gemini: {category}, using default.")
-                category = "03_PERSONAL/Archives"
-                
-            return {"category": category, "clean_filename": clean_filename}
+            res = parse_json_response(response.text)
+            return _classification(
+                res.get("category", DEFAULT_CATEGORY),
+                res.get("clean_filename", os.path.basename(file_path)),
+                METHOD_MODEL,
+            )
             
         except Exception as e:
             logger.error(f"Error calling Gemini API for classification: {e}")
