@@ -26,6 +26,9 @@ services:
     image: kong:3.9
     container_name: synapse_gateway
     restart: unless-stopped
+    # Kong resolves {vault://env/api-key} in config/kong.yml from API_KEY here.
+    env_file:
+      - .env
     environment:
       - KONG_DATABASE=off
       - KONG_DECLARATIVE_CONFIG=/kong/declarative/kong.yml

@@ -23,7 +23,7 @@ jobs:
           cd /home/linuxuser/synapse-storage-system
           
           # Write remote .env configuration file
-          echo "API_KEY=super_secret_homelab_key" > .env
+          echo "API_KEY=${{ secrets.API_KEY }}" > .env
           echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" >> .env
           echo "NAS_BASE_PATH=/mnt/nas_data" >> .env
           echo "KONG_GATEWAY_URL=http://127.0.0.1:8000" >> .env
