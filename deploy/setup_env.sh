@@ -42,4 +42,12 @@ mkdir -p "$NAS_ROOT/ollama"
 # needs it applied explicitly, scope it to these directories rather than -R across
 # the whole archive.
 
+# Render the Kong declarative config with the real key. Kong cannot read this
+# value from the environment itself (see the note in the template), so it has to
+# be substituted before the container starts.
+: "${API_KEY:?API_KEY is not set - export it or source .env before running this}"
+export API_KEY
+envsubst '${API_KEY}' < config/kong.yml.template > config/kong.yml
+echo "Rendered config/kong.yml from template."
+
 echo "Environment setup complete. NAS verified mounted at $NAS_ROOT"

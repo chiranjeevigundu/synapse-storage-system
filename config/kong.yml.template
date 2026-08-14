@@ -1,0 +1,31 @@
+_format_version: "3.0"
+_transform: true
+
+services:
+  - name: ingest-service
+    url: http://ingest-api:8000
+    routes:
+      - name: ingest-route
+        paths:
+          - /ingest
+        strip_path: true
+    plugins:
+      - name: key-auth
+        config:
+          key_names: ["x-api-key"]
+          hide_credentials: false
+
+consumers:
+  - username: homelab_device
+    keyauth_credentials:
+      # Substituted from $API_KEY by deploy/setup_env.sh before Kong loads this.
+      #
+      # This was briefly a {vault://env/api-key} reference, which does not work:
+      # Kong only resolves vault references in fields its schema marks
+      # "referenceable" (datastore passwords, some plugin secrets). A
+      # keyauth_credentials key is not one, so Kong neither resolved it nor
+      # complained — the consumer simply ended up with no usable credential and
+      # every request got 401, including one carrying the correct key.
+      #
+      # The generated config/kong.yml is gitignored, so no key is committed.
+      - key: "${API_KEY}"

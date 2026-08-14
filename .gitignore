@@ -16,3 +16,6 @@ __pycache__/
 test_nas_data/
 .pytest_cache/
 .antigravity/
+
+# Generated from config/kong.yml.template; contains the live API key.
+config/kong.yml
