@@ -50,7 +50,17 @@ services:
       - ./config/kong.yml:/kong/declarative/kong.yml
     ports:
       - "80:8000"
-      - "443:8443"
+      # 443 is deliberately not published. tailscaled already owns it on this host:
+      # `tailscale serve` terminates real HTTPS at
+      # https://macminilinuxserver.tailcab499.ts.net and proxies to 127.0.0.1:8000.
+      # Kong binding 0.0.0.0:443 collides with that specific-address bind and the
+      # container fails to start with "address already in use", taking the whole
+      # gateway down — which is what happened.
+      #
+      # Nothing is lost: no TLS certificate is configured here, so Kong's 8443 would
+      # only ever present a self-signed cert. Clients reach the ingest route over
+      # http on port 80, and anything wanting HTTPS should go through Tailscale
+      # Serve, which has a real certificate.
 
   prometheus:
     image: prom/prometheus
