@@ -18,4 +18,15 @@ services:
 consumers:
   - username: homelab_device
     keyauth_credentials:
-      - key: super_secret_homelab_key
+      # Resolved at load time from the API_KEY environment variable via Kong's env
+      # vault, rather than being committed here. This file previously carried the
+      # literal key in a public repository, alongside the same value in three other
+      # files, and it is the only authentication in front of an API published on
+      # host ports 80 and 443.
+      #
+      # {vault://env/api-key} reads API_KEY: the env vault uppercases the reference
+      # and replaces hyphens with underscores. The gateway service reads .env for it.
+      # If the variable is absent, resolution fails and the consumer has no
+      # credential, so the API rejects everything. That is the correct direction to
+      # fail: closed, not open on a published key.
+      - key: "{vault://env/api-key}"

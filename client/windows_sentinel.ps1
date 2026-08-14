@@ -1,7 +1,24 @@
+# Both values below default to environment variables, so a key is never committed
+# here and an address change is one place, not one place per machine.
+#
+#   setx SYNAPSE_ENDPOINT "http://macminilinuxserver/ingest/upload"
+#   setx SYNAPSE_API_KEY  "<the key>"
+#
+# On the hostname: this previously hardcoded http://192.168.12.37, which stopped
+# resolving when the LAN was renumbered. Every Sentinel then failed silently — they
+# run as Hidden scheduled tasks, so the errors went to a console nobody sees while
+# files piled up in C:\NAS_Outbox with no alert. A name that follows the host is the
+# fix; a different hard-coded address is the same bug again.
 param(
-    [string]$EndpointUri = "http://192.168.12.37/ingest/upload",
-    [string]$ApiKey = "super_secret_homelab_key"
+    [string]$EndpointUri = $(if ($env:SYNAPSE_ENDPOINT) { $env:SYNAPSE_ENDPOINT } else { "http://macminilinuxserver/ingest/upload" }),
+    [string]$ApiKey = $env:SYNAPSE_API_KEY
 )
+
+if ([string]::IsNullOrWhiteSpace($ApiKey)) {
+    # Fail loudly at startup rather than looping every 2 seconds getting 401s into
+    # a hidden console.
+    throw "SYNAPSE_API_KEY is not set. Set it with: setx SYNAPSE_API_KEY ""<key>"" (then restart the task)."
+}
 
 $ErrorActionPreference = "Stop"
 
