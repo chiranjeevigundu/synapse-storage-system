@@ -19,8 +19,18 @@ services:
     env_file:
       - .env
     command: ["uvicorn", "src.ingest_api:app", "--host", "0.0.0.0", "--port", "8000"]
-    ports:
-      - "8000:8000"
+    # Deliberately not published to the host. Kong reaches this over the compose
+    # network as http://ingest-api:8000 (config/kong.yml), so the mapping was never
+    # needed to serve traffic — and publishing it let clients reach the ingest API
+    # directly, bypassing the gateway that exists to authenticate them.
+    #
+    # It also collided: aadyon-assist already binds host port 8000 on this machine,
+    # so the bind failed, `compose up` aborted, and both this container and the
+    # gateway were left in state "created" with empty logs — a port conflict is
+    # reported by the daemon at start time and never reaches the container log,
+    # which makes it look like nothing happened at all.
+    expose:
+      - "8000"
 
   gateway:
     image: kong:3.9
